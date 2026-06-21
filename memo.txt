@@ -1,0 +1,3 @@
+#Using Git Bash
+source _venv/Scripts/activate
+py -3.13 -m pip install -r requirements.txt

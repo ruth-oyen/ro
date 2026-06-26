@@ -197,10 +197,6 @@ td
 	font-size:5.0pt;
 	text-align:center;
 	vertical-align:top;
-	border-top:none;
-	border-right:none;
-	border-bottom:.5pt hairline windowtext;
-	border-left:none;
 	background:black;
 	mso-pattern:black none;
 	white-space:nowrap;
@@ -211,6 +207,10 @@ td
 	font-size:5.0pt;
 	text-align:center;
 	vertical-align:top;
+	border-top:none;
+	border-right:none;
+	border-bottom:.5pt hairline windowtext;
+	border-left:none;
 	background:black;
 	mso-pattern:black none;
 	white-space:nowrap;

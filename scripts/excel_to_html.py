@@ -2,7 +2,24 @@ import argparse
 import os
 import sys
 
+import pythoncom
+import win32api
 import win32com.client
+import win32con
+import win32process
+
+
+def excel_pid(excel):
+    _, pid = win32process.GetWindowThreadProcessId(excel.Hwnd)
+    return pid
+
+
+def terminate_process(pid):
+    handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE, False, pid)
+    try:
+        win32api.TerminateProcess(handle, 0)
+    finally:
+        win32api.CloseHandle(handle)
 
 
 def main():
@@ -27,8 +44,14 @@ def main():
             print(f"Error deleting existing output file: {e}")
             sys.exit(1)
 
-    excel = win32com.client.Dispatch("Excel.Application")
-    # excel.Visible = False
+    pythoncom.CoInitialize()
+
+    # Use a separate Excel process so building does not close the user's open Excel windows.
+    excel = win32com.client.DispatchEx("Excel.Application")
+    pid = excel_pid(excel)
+    excel.Visible = False
+    excel.DisplayAlerts = False
+    wb = None
 
     try:
         excel.DefaultWebOptions.AllowPNG = True
@@ -37,15 +60,23 @@ def main():
         wb = excel.Workbooks.Open(input_path)
         wb.SaveAs(output_path, FileFormat=44)  # 44 = xlHtml
         wb.Close(False)
+        wb = None
         print(f"Saved: {output_path}")
     except Exception as e:
         print(f"Error during conversion: {e}")
         sys.exit(1)
     finally:
         try:
-            excel.Quit()
+            if wb is not None:
+                wb.Close(False)
         except Exception:
             pass
+        try:
+            terminate_process(pid)
+        except Exception:
+            pass
+        excel = None
+        pythoncom.CoUninitialize()
 
 
 if __name__ == "__main__":

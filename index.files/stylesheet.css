@@ -195,11 +195,11 @@ td
 	{mso-style-parent:style0;
 	color:gray;
 	font-size:5.0pt;
-	text-align:center;
-	vertical-align:top;
+	text-align:left;
+	vertical-align:middle;
 	border-top:none;
-	border-right:none;
-	border-bottom:.5pt hairline windowtext;
+	border-right:.5pt hairline windowtext;
+	border-bottom:none;
 	border-left:none;
 	background:black;
 	mso-pattern:black none;
@@ -211,6 +211,10 @@ td
 	font-size:5.0pt;
 	text-align:center;
 	vertical-align:top;
+	border-top:none;
+	border-right:none;
+	border-bottom:.5pt hairline windowtext;
+	border-left:none;
 	background:black;
 	mso-pattern:black none;
 	white-space:nowrap;
@@ -221,10 +225,6 @@ td
 	font-size:5.0pt;
 	text-align:left;
 	vertical-align:middle;
-	border-top:none;
-	border-right:.5pt hairline windowtext;
-	border-bottom:none;
-	border-left:none;
 	background:black;
 	mso-pattern:black none;
 	white-space:nowrap;
@@ -233,8 +233,8 @@ td
 	{mso-style-parent:style0;
 	color:gray;
 	font-size:5.0pt;
-	text-align:left;
-	vertical-align:middle;
+	text-align:center;
+	vertical-align:top;
 	background:black;
 	mso-pattern:black none;
 	white-space:nowrap;

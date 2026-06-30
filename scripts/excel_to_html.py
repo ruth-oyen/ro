@@ -9,6 +9,9 @@ import win32con
 import win32process
 
 
+ACCESS_COUNTER_MARKER = "{{ACCESS_COUNTER}}"
+
+
 def excel_pid(excel):
     _, pid = win32process.GetWindowThreadProcessId(excel.Hwnd)
     return pid
@@ -20,6 +23,42 @@ def terminate_process(pid):
         win32api.TerminateProcess(handle, 0)
     finally:
         win32api.CloseHandle(handle)
+
+
+def move_access_counter_marker_to_cell(workbook):
+    marker_count = 0
+
+    for worksheet in workbook.Worksheets:
+        for shape_index in range(worksheet.Shapes.Count, 0, -1):
+            shape = worksheet.Shapes.Item(shape_index)
+            try:
+                shape_text = shape.TextFrame2.TextRange.Text.strip()
+            except Exception:
+                continue
+
+            if shape_text != ACCESS_COUNTER_MARKER:
+                continue
+
+            marker_cell = shape.TopLeftCell
+            if marker_cell.Value not in (None, "", ACCESS_COUNTER_MARKER):
+                raise ValueError(
+                    "The cell under the access counter marker must be empty"
+                )
+
+            center_x_pt = shape.Left - marker_cell.Left + (shape.Width / 2)
+            center_y_pt = shape.Top - marker_cell.Top + (shape.Height / 2)
+            marker_cell.Value = (
+                "{{ACCESS_COUNTER:"
+                f"{center_x_pt:.3f}:{center_y_pt:.3f}"
+                "}}"
+            )
+            shape.Delete()
+            marker_count += 1
+
+    if marker_count != 1:
+        raise ValueError(
+            "Exactly one {{ACCESS_COUNTER}} text box is required"
+        )
 
 
 def main():
@@ -58,6 +97,7 @@ def main():
         excel.DefaultWebOptions.PixelsPerInch = 192
 
         wb = excel.Workbooks.Open(input_path)
+        move_access_counter_marker_to_cell(wb)
         wb.SaveAs(output_path, FileFormat=44)  # 44 = xlHtml
         wb.Close(False)
         wb = None

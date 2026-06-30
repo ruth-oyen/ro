@@ -1,32 +1,28 @@
+import html
 import re
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 
-DEFAULT_COUNTER_THEME = "asoul"
-DEFAULT_COUNTER_HEIGHT_PX = 24
-MIN_COUNTER_HEIGHT_PX = 8
-MAX_COUNTER_HEIGHT_PX = 128
-ALLOWED_COUNTER_THEMES = {"asoul", "moebooru", "rule34"}
-LEGACY_COUNTER_IDS = {
-    "ruth-oyen-ro": "ruth_oyen",
-}
+COUNTER_MARKER_PATTERN = (
+    r"\{\{\s*(?:<span\b[^>]*display\s*:\s*none[^>]*>\s*)?"
+    r"ACCESS_COUNTER"
+    r"(?:\s*:\s*(?P<center_x>[0-9]+(?:\.[0-9]+)?)"
+    r"\s*:\s*(?P<center_y>[0-9]+(?:\.[0-9]+)?))?"
+    r"\s*\}\}\s*(?:</span>)?"
+)
 COUNTER_MARKER_RE = re.compile(
-    r"A\s*(?:<span\b[^>]*display\s*:\s*none[^>]*>\s*)?"
-    r"CCESS_COUNTER\s*(?::\s*([A-Za-z0-9_-]+))?"
-    r"\s*(?::\s*([A-Za-z0-9_-]+))?"
-    r"\s*(?::\s*([0-9]+))?\s*(?:</span>)?",
+    COUNTER_MARKER_PATTERN,
     re.IGNORECASE,
 )
 COUNTER_CELL_RE = re.compile(
-    r"(<td\b[^>]*>)"
-    r"((?:(?!</td>).)*COUNTER(?:(?!</td>).)*)"
-    r"(</td>)",
+    r"(?P<open_tag><td\b[^>]*>)\s*"
+    + COUNTER_MARKER_PATTERN
+    + r"\s*</td>",
     re.IGNORECASE | re.DOTALL,
 )
 COUNTER_EXISTING_RE = re.compile(
-    r'(?:<span\b[^>]*>\s*)?'
-    r'<img\s+src="https://counter\.256server\.com/([A-Za-z0-9_-]+)\?theme=([A-Za-z0-9_-]+)"[^>]*>'
-    r'(?:\s*</span>)?(?:&nbsp;)?',
+    r'<img\s+src="https?://counter\.256server\.com/[^\"]+"[^>]*>',
     re.IGNORECASE,
 )
 
@@ -37,132 +33,130 @@ HEAD_INSERT = """<meta charset="UTF-8">
 """
 
 
-def insert_head_metadata(html):
-    if '<meta charset="UTF-8">' in html:
-        return html
-    return html.replace("<head>", f"<head>\n{HEAD_INSERT}", 1)
+def insert_head_metadata(html_text):
+    if '<meta charset="UTF-8">' in html_text:
+        return html_text
+    return html_text.replace("<head>", f"<head>\n{HEAD_INSERT}", 1)
 
 
-def remove_head_metadata(html):
-    return html.replace(HEAD_INSERT, "", 1)
+def remove_head_metadata(html_text):
+    return html_text.replace(HEAD_INSERT, "", 1)
 
 
-def validate_theme(theme):
-    if theme not in ALLOWED_COUNTER_THEMES:
-        allowed = ", ".join(sorted(ALLOWED_COUNTER_THEMES))
-        raise ValueError(f"Access counter theme must be one of: {allowed}")
-    return theme
+def read_counter_url():
+    counter_file = Path(__file__).with_name("counter.txt")
+    counter_url = counter_file.read_text(encoding="utf-8").strip()
+    parts = urlsplit(counter_url)
+
+    if parts.scheme not in {"http", "https"}:
+        raise ValueError("Access counter URL must use HTTP or HTTPS")
+    if parts.netloc != "counter.256server.com":
+        raise ValueError("Access counter URL must use counter.256server.com")
+    if not parts.path:
+        raise ValueError("Access counter URL must include a counter path")
+
+    if parts.scheme == "http":
+        parts = parts._replace(scheme="https")
+
+    return urlunsplit(parts)
 
 
-def validate_height(height_px):
-    if height_px < MIN_COUNTER_HEIGHT_PX or height_px > MAX_COUNTER_HEIGHT_PX:
-        raise ValueError(
-            "Access counter height must be "
-            f"{MIN_COUNTER_HEIGHT_PX}-{MAX_COUNTER_HEIGHT_PX}px"
-        )
-    return height_px
-
-
-def counter_img(
-    counter_id,
-    theme=DEFAULT_COUNTER_THEME,
-    height_px=DEFAULT_COUNTER_HEIGHT_PX,
-):
-    theme = validate_theme(theme)
-    height_px = validate_height(height_px)
-    counter_url = f"https://counter.256server.com/{counter_id}?theme={theme}"
+def counter_image_tag(counter_url):
+    escaped_url = html.escape(counter_url, quote=True)
     return (
-        '<span style="position:absolute;z-index:1000;line-height:0">'
-        f'<img src="{counter_url}" alt="Access counter" '
-        f'style="display:block;border:0;height:{height_px}px;width:auto" '
+        f'<img src="{escaped_url}" alt="Access counter" '
+        'style="display:block;border:0" '
         'referrerpolicy="no-referrer-when-downgrade">'
+    )
+
+
+def counter_img(counter_url, center_x_pt=None, center_y_pt=None):
+    position_style = "position:absolute;z-index:1000;line-height:0"
+    if center_x_pt is not None and center_y_pt is not None:
+        position_style += (
+            f";left:{center_x_pt}pt;top:{center_y_pt}pt"
+            ";transform:translate(-50%,-50%)"
+        )
+
+    return (
+        f'<span style="{position_style}">'
+        f'{counter_image_tag(counter_url)}'
         '</span>&nbsp;'
     )
 
 
-def existing_counter_img(match):
-    height_match = re.search(r"height\s*:\s*([0-9]+)px", match.group(0))
-    height_px = (
-        int(height_match.group(1)) if height_match else DEFAULT_COUNTER_HEIGHT_PX
+def positioned_cell_tag(open_tag):
+    style_match = re.search(
+        r"style=(?P<quote>['\"])(?P<style>.*?)(?P=quote)",
+        open_tag,
+        flags=re.IGNORECASE | re.DOTALL,
     )
-    return counter_img(
-        LEGACY_COUNTER_IDS.get(match.group(1), match.group(1)),
-        match.group(2),
-        height_px,
-    )
-
-
-def marker_config(marker_html):
-    marker_text = re.sub(r"<[^>]+>", "", marker_html)
-    marker_text = re.sub(r"\s+", "", marker_text)
-    match = re.search(
-        r"ACCESS_COUNTER(?::([A-Za-z0-9_-]+))?"
-        r"(?::([A-Za-z0-9_-]+))?(?::([0-9]+))?",
-        marker_text,
-        flags=re.IGNORECASE,
-    )
-    if not match or not match.group(1):
-        raise ValueError(
-            "Access counter marker must be "
-            "ACCESS_COUNTER:<counter_id>:<theme>:<height_px>"
+    if style_match:
+        style = style_match.group("style").rstrip(";")
+        replacement = (
+            f"style={style_match.group('quote')}"
+            f"{style};position:relative"
+            f"{style_match.group('quote')}"
         )
-    height_px = (
-        int(match.group(3)) if match.group(3) else DEFAULT_COUNTER_HEIGHT_PX
-    )
-    return match.group(1), match.group(2) or DEFAULT_COUNTER_THEME, height_px
-
-
-def insert_access_counter(html):
-    if "counter.256server.com" in html:
-        return COUNTER_EXISTING_RE.sub(
-            existing_counter_img,
-            html,
-            count=1,
-        )
-
-    def replace_marker_cell(match):
-        counter_id, theme, height_px = marker_config(match.group(2))
         return (
-            f"{match.group(1)}"
-            f"{counter_img(counter_id, theme, height_px)}"
-            f"{match.group(3)}"
+            open_tag[:style_match.start()]
+            + replacement
+            + open_tag[style_match.end():]
         )
 
-    updated = COUNTER_CELL_RE.sub(replace_marker_cell, html, count=1)
-    if updated != html:
+    return open_tag[:-1] + ' style="position:relative">'
+
+
+def insert_access_counter(html_text, counter_url):
+    updated, replacement_count = COUNTER_EXISTING_RE.subn(
+        counter_image_tag(counter_url),
+        html_text,
+        count=1,
+    )
+
+    if replacement_count:
         return updated
 
-    def replace_marker(match):
-        counter_id = match.group(1)
-        if not counter_id:
-            raise ValueError(
-                "Access counter marker must be "
-                "ACCESS_COUNTER:<counter_id>:<theme>:<height_px>"
-            )
-        theme = match.group(2) or DEFAULT_COUNTER_THEME
-        height_px = (
-            int(match.group(3)) if match.group(3) else DEFAULT_COUNTER_HEIGHT_PX
+    def replace_marker_cell(match):
+        center_x = match.group("center_x")
+        center_y = match.group("center_y")
+        return (
+            positioned_cell_tag(match.group("open_tag"))
+            + counter_img(counter_url, center_x, center_y)
+            + "</td>"
         )
-        return counter_img(counter_id, theme, height_px)
 
-    return COUNTER_MARKER_RE.sub(replace_marker, html, count=1)
+    updated, replacement_count = COUNTER_CELL_RE.subn(
+        replace_marker_cell,
+        html_text,
+        count=1,
+    )
+    if replacement_count:
+        return updated
+
+    return COUNTER_MARKER_RE.sub(
+        lambda match: counter_img(counter_url),
+        html_text,
+        count=1,
+    )
 
 
 def main():
     html_files = (Path("index.html"), Path("index.files/sheet001.html"))
+    counter_url = read_counter_url()
 
     changed = []
     for html_file in html_files:
         if not html_file.exists():
             continue
 
-        html = html_file.read_text(encoding="utf-8")
-        updated = insert_access_counter(html)
+        html_text = html_file.read_text(encoding="utf-8")
+        updated = insert_access_counter(html_text, counter_url)
         if html_file.name == "index.html":
             updated = insert_head_metadata(updated)
         else:
             updated = remove_head_metadata(updated)
-        if updated != html:
+        if updated != html_text:
             html_file.write_text(updated, encoding="utf-8")
             changed.append(str(html_file))
 
